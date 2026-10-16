@@ -14,7 +14,6 @@ To quit, type quit / exit / q, press Enter on an empty line, or Ctrl+C / Ctrl+D.
 
 import argparse
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,7 +22,7 @@ from dotenv import load_dotenv
 from rank_bm25 import BM25Okapi
 
 from extract import extract_pages, find_pdf
-from simple_ask import ask, build_system_prompt, read_question
+from simple_ask import NOT_FOUND, ask_and_print, build_system_prompt, read_question
 
 CHUNK_SIZE = 300   # words per chunk
 OVERLAP = 50       # words shared between neighbouring chunks
@@ -41,14 +40,35 @@ STOPWORDS = {
 
 @dataclass
 class Chunk:
-    text: str
+    text: str             # plain words, used for keyword search
+    text_with_pages: str  # same words with [Page N] markers, sent to Claude
     first_page: int
     last_page: int
+
+    def pages(self) -> set[int]:
+        """Every page this chunk has words from."""
+        return set(range(self.first_page, self.last_page + 1))
 
     def label(self) -> str:
         if self.first_page == self.last_page:
             return f"page {self.first_page}"
         return f"pages {self.first_page}-{self.last_page}"
+
+
+def add_page_markers(window: list[tuple[str, int]]) -> str:
+    """Join words, inserting '[Page N]' wherever a new page starts.
+
+    This lets Claude see which page each sentence is on, even when a chunk
+    crosses a page break.
+    """
+    parts = []
+    current_page = None
+    for word, page in window:
+        if page != current_page:
+            parts.append(f"[Page {page}]")
+            current_page = page
+        parts.append(word)
+    return " ".join(parts)
 
 
 def chunk_pages(pages: list[str], size: int = CHUNK_SIZE,
@@ -74,6 +94,7 @@ def chunk_pages(pages: list[str], size: int = CHUNK_SIZE,
         window = words[start:start + size]
         chunks.append(Chunk(
             text=" ".join(word for word, _ in window),
+            text_with_pages=add_page_markers(window),
             first_page=window[0][1],
             last_page=window[-1][1],
         ))
@@ -110,11 +131,16 @@ def retrieve(index: BM25Okapi, chunks: list[Chunk], question: str,
 
 
 def build_context(results: list[tuple[Chunk, float]]) -> str:
-    """Join the retrieved chunks, each labelled with its page numbers."""
+    """Join the retrieved chunks; page markers inside each show its pages."""
     return "\n\n".join(
-        f"--- Excerpt from {chunk.label()} ---\n{chunk.text}"
-        for chunk, _ in results
+        f"--- Excerpt {number} ---\n{chunk.text_with_pages}"
+        for number, (chunk, _) in enumerate(results, start=1)
     )
+
+
+def pages_in(results: list[tuple[Chunk, float]]) -> set[int]:
+    """All page numbers Claude was shown, so it can't cite any other page."""
+    return set().union(*(chunk.pages() for chunk, _ in results))
 
 
 def main() -> None:
@@ -140,8 +166,10 @@ def main() -> None:
 
         results = retrieve(index, chunks, question)
         if not results:
-            print("No chunk shares any keyword with that question. "
-                  "Try using words that appear in the document.")
+            # Nothing to answer from, so don't call Claude (saves money too).
+            print(f"\n{NOT_FOUND}")
+            print("\n[No chunk shared a keyword with the question; "
+                  "no API call made]")
             continue
 
         if args.show_chunks:
@@ -149,23 +177,9 @@ def main() -> None:
                 print(f"  [{score:5.2f}] {chunk.label()}: {chunk.text[:80]}...")
 
         system_prompt = build_system_prompt(build_context(results))
-        try:
-            answer, input_tokens = ask(client, system_prompt, question)
-        except anthropic.AuthenticationError:
-            sys.exit("Invalid API key. Check ANTHROPIC_API_KEY in .env.")
-        except anthropic.RateLimitError:
-            print("Rate limited. Wait a moment and try again.")
-            continue
-        except anthropic.APIConnectionError:
-            print("Network error. Check your internet connection.")
-            continue
-        except anthropic.APIStatusError as error:
-            print(f"API error {error.status_code}: {error.message}")
-            continue
-
-        print(f"\n{answer}")
-        print(f"\n[Input tokens: {input_tokens:,} | "
-              f"chunks sent: {len(results)} of {len(chunks)}]")
+        ask_and_print(client, system_prompt, question, pages_in(results),
+                      extra_info=f" | chunks sent: {len(results)} of "
+                                 f"{len(chunks)}")
 
 
 if __name__ == "__main__":

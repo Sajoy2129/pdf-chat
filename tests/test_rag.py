@@ -2,7 +2,14 @@
 
 import pytest
 
-from rag import build_context, build_index, chunk_pages, retrieve, tokenize
+from rag import (
+    build_context,
+    build_index,
+    chunk_pages,
+    pages_in,
+    retrieve,
+    tokenize,
+)
 
 
 def numbered_words(count: int, prefix: str = "w") -> str:
@@ -84,10 +91,28 @@ def test_retrieve_skips_chunks_with_no_matching_words():
     assert retrieve(index, chunks, "completely unrelated question") == []
 
 
-def test_build_context_labels_each_chunk():
+def test_page_markers_show_where_each_page_starts():
+    chunks = chunk_pages(["one two", "three four"], size=4, overlap=0)
+
+    assert chunks[0].text == "one two three four"  # plain, for BM25
+    assert chunks[0].text_with_pages == (
+        "[Page 1] one two [Page 2] three four"     # marked, for Claude
+    )
+
+
+def test_build_context_numbers_excerpts_and_keeps_page_markers():
     chunks = chunk_pages(["one two", "three four"], size=2, overlap=0)
 
     context = build_context([(chunks[1], 1.0), (chunks[0], 0.5)])
 
-    assert context.startswith("--- Excerpt from page 2 ---\nthree four")
-    assert "--- Excerpt from page 1 ---\none two" in context
+    assert context == (
+        "--- Excerpt 1 ---\n[Page 2] three four\n\n"
+        "--- Excerpt 2 ---\n[Page 1] one two"
+    )
+
+
+def test_pages_in_lists_every_page_claude_was_shown():
+    chunks = chunk_pages(["a b", "c d", "e f", "g h"], size=3, overlap=0)
+    # chunks: "a b c" (pages 1-2), "d e f" (pages 2-3), "g h" (page 4)
+
+    assert pages_in([(chunks[0], 1.0), (chunks[2], 0.5)]) == {1, 2, 4}
