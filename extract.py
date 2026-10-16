@@ -7,6 +7,7 @@ Usage:
 
 import sys
 from pathlib import Path
+from typing import BinaryIO
 
 from pypdf import PdfReader
 
@@ -24,8 +25,10 @@ def find_pdf(folder: str | Path = "docs") -> Path:
     return pdfs[0]
 
 
-def extract_pages(pdf_path: str | Path) -> list[str]:
+def extract_pages(pdf_path: str | Path | BinaryIO) -> list[str]:
     """Return the text of each page, in order (index 0 is page 1).
+
+    Accepts a file path or an open binary file (e.g. an uploaded file).
 
     Pages with no extractable text, such as scanned images, become an
     empty string, so page numbers stay correct.

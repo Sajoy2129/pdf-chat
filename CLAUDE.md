@@ -21,6 +21,7 @@ python extract.py                      # page + word counts for the PDF in docs/
 python simple_ask.py                   # v1 question loop (quit / exit / q to stop)
 python rag.py --show-chunks            # v2 question loop, prints BM25's picks and scores
 python simple_ask.py "docs/other.pdf"  # any script accepts an explicit PDF path
+flask --app app run --debug --port 5001  # web UI at http://127.0.0.1:5001 (macOS AirPlay holds 5000)
 
 python -m pytest                       # all tests
 python -m pytest tests/test_rag.py::test_retrieve_finds_chunk_with_distinctive_word
@@ -39,8 +40,15 @@ python -m pytest tests/test_rag.py::test_retrieve_finds_chunk_with_distinctive_w
 Flat modules at the repo root, with a one-way import chain:
 
 ```
-extract.py  ->  simple_ask.py  ->  rag.py
+extract.py  ->  simple_ask.py  ->  rag.py  ->  app.py (Flask, templates/index.html)
 ```
+
+- `app.py` holds no answering logic of its own. Its "full" and "rag" modes call the same `ask()`,
+  `retrieve()`, `build_context()` and `pages_in()` as the scripts. Uploads are parsed in memory
+  (never written to disk) and kept in the module-level `DOCUMENTS` dict, keyed by a random id in
+  the signed session cookie. A server restart clears them. Set `FLASK_SECRET_KEY` in `.env` to
+  keep sessions across restarts. Tests monkeypatch `app.ask` and `app.get_client`, and build PDFs
+  with `tests/pdf_factory.py`, which pytest's default import mode puts on `sys.path`.
 
 - `extract.py`: `find_pdf()`, `extract_pages()` (pypdf; one string per page, `""` for pages
   without text so page numbers stay aligned).
@@ -64,8 +72,10 @@ just in the prompt:
 
 In `rag.py`, each `Chunk` has two texts: `text` (plain, used for BM25) and `text_with_pages`
 (`[Page N]` markers at page breaks, sent to Claude so it can cite the exact page when a chunk
-crosses pages). If `retrieve()` finds no chunk with score > 0, `rag.py` prints `NOT_FOUND`
-without calling the API.
+crosses pages). `retrieve()` decides "match" by shared tokens and uses the BM25 score only for
+ranking. Never filter on `score > 0`: `BM25Okapi` gives words that appear in ≥ half of the chunks
+a weight ≤ 0, so a single-chunk document would never match. With no matching chunk, callers
+return `NOT_FOUND` without calling the API.
 
 ### Claude API usage
 
