@@ -9,6 +9,7 @@ Usage:
     python rag.py                          # uses the only PDF in docs/
     python rag.py "docs/my file.pdf"
     python rag.py --show-chunks            # also print which chunks were picked
+To quit, type quit / exit / q, press Enter on an empty line, or Ctrl+C / Ctrl+D.
 """
 
 import argparse
@@ -22,7 +23,7 @@ from dotenv import load_dotenv
 from rank_bm25 import BM25Okapi
 
 from extract import extract_pages, find_pdf
-from simple_ask import ask, build_system_prompt
+from simple_ask import ask, build_system_prompt, read_question
 
 CHUNK_SIZE = 300   # words per chunk
 OVERLAP = 50       # words shared between neighbouring chunks
@@ -130,13 +131,11 @@ def main() -> None:
     client = anthropic.Anthropic()
 
     print(f"Loaded {pdf_path}: {len(chunks)} chunks of ~{CHUNK_SIZE} words "
-          f"({OVERLAP}-word overlap). Empty line to quit.")
+          f"({OVERLAP}-word overlap). Type 'quit' to stop.")
     while True:
-        try:
-            question = input("\nQuestion: ").strip()
-        except EOFError:
-            break
-        if not question:
+        question = read_question()
+        if question is None:
+            print("Goodbye!")
             break
 
         results = retrieve(index, chunks, question)

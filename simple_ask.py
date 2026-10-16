@@ -3,7 +3,8 @@
 This is Version 1 from PLAN.md (full context). Usage:
     python simple_ask.py                      # uses the only PDF in docs/
     python simple_ask.py "docs/my file.pdf"   # or name a PDF yourself
-Type a question and press Enter. An empty line (or Ctrl+D) quits.
+Type a question and press Enter. To quit, type quit / exit / q, press Enter
+on an empty line, or press Ctrl+C or Ctrl+D.
 """
 
 import sys
@@ -19,6 +20,27 @@ MODEL = "claude-opus-5-5"
 INSTRUCTIONS = """You answer questions about the document below.
 Use only the document. If the answer is not in it, say so.
 Mention the page number(s) your answer comes from."""
+
+QUIT_WORDS = {"quit", "exit", "q"}
+
+
+def is_quit(text: str) -> bool:
+    """True if the user typed nothing or a quit word (any capitalisation)."""
+    return text.strip().lower() in QUIT_WORDS | {""}
+
+
+def read_question() -> str | None:
+    """Ask for a question. Return None when the user wants to quit.
+
+    Ctrl+D raises EOFError and Ctrl+C raises KeyboardInterrupt; both mean
+    "quit", so we catch them instead of showing an error trace.
+    """
+    try:
+        question = input("\nQuestion: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()  # move past the ^C / ^D so "Goodbye!" starts on a new line
+        return None
+    return None if is_quit(question) else question
 
 
 def build_document_text(pages: list[str]) -> str:
@@ -69,13 +91,11 @@ def main() -> None:
     )
     client = anthropic.Anthropic()
 
-    print(f"Loaded {pdf_path}. Ask a question (empty line to quit).")
+    print(f"Loaded {pdf_path}. Ask a question (type 'quit' to stop).")
     while True:
-        try:
-            question = input("\nQuestion: ").strip()
-        except EOFError:
-            break
-        if not question:
+        question = read_question()
+        if question is None:
+            print("Goodbye!")
             break
 
         try:

@@ -6,7 +6,15 @@ fast, and work without internet or an API key.
 
 from types import SimpleNamespace
 
-from simple_ask import ask, build_document_text, build_system_prompt
+import pytest
+
+from simple_ask import (
+    ask,
+    build_document_text,
+    build_system_prompt,
+    is_quit,
+    read_question,
+)
 
 
 class FakeMessages:
@@ -75,3 +83,36 @@ def test_ask_handles_refusal():
     answer, _ = ask(client, "system", "question")
 
     assert "declined" in answer
+
+
+@pytest.mark.parametrize("text", ["quit", "exit", "q", "QUIT", "  Exit  ", ""])
+def test_is_quit_accepts_quit_words_and_empty(text):
+    assert is_quit(text)
+
+
+@pytest.mark.parametrize("text", ["What is the total?", "quite good", "q1"])
+def test_is_quit_rejects_real_questions(text):
+    assert not is_quit(text)
+
+
+def test_read_question_returns_the_question(monkeypatch):
+    # monkeypatch swaps input() for a fake, so no keyboard is needed.
+    monkeypatch.setattr("builtins.input", lambda prompt: "  What is the total?  ")
+
+    assert read_question() == "What is the total?"
+
+
+def test_read_question_returns_none_for_quit(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: "quit")
+
+    assert read_question() is None
+
+
+@pytest.mark.parametrize("error", [EOFError, KeyboardInterrupt])
+def test_read_question_returns_none_on_ctrl_d_or_ctrl_c(monkeypatch, error):
+    def fake_input(prompt):
+        raise error
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    assert read_question() is None
