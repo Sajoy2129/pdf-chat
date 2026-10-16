@@ -83,6 +83,25 @@ def test_retrieve_finds_chunk_with_distinctive_word():
     assert best.last_page == 3
 
 
+def test_retrieve_finds_the_only_chunk_of_a_short_document():
+    # Regression test: with one chunk, BM25Okapi scores every match below 0.
+    chunks = chunk_pages(["Payment terms Net 30 days"])
+    index = build_index(chunks)
+
+    results = retrieve(index, chunks, "What are the payment terms?")
+
+    assert [chunk for chunk, _ in results] == chunks
+
+
+def test_retrieve_keeps_chunks_whose_words_are_in_every_chunk():
+    # "payment" is in all 3 chunks, so its BM25 weight is 0 - still a match.
+    chunks = chunk_pages(["payment one", "payment two", "payment three"],
+                         size=2, overlap=0)
+    index = build_index(chunks)
+
+    assert len(retrieve(index, chunks, "payment")) == 3
+
+
 def test_retrieve_skips_chunks_with_no_matching_words():
     chunks = chunk_pages(["alpha beta", "gamma delta", "epsilon zeta"],
                          size=2, overlap=0)

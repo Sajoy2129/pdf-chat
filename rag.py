@@ -121,13 +121,20 @@ def retrieve(index: BM25Okapi, chunks: list[Chunk], question: str,
              k: int = TOP_K) -> list[tuple[Chunk, float]]:
     """Return up to k (chunk, score) pairs, best first.
 
-    Chunks with score 0 share no words with the question, so they are left out
-    rather than sent as filler.
+    Only chunks that share at least one word with the question are returned,
+    so unrelated chunks are never sent as filler. We check shared words
+    directly instead of using "score > 0": BM25Okapi gives a word that appears
+    in half or more of the chunks a zero or negative weight, so a chunk that
+    matches can still score <= 0 (always true when there is only one chunk).
     """
-    scores = index.get_scores(tokenize(question))
-    ranked = sorted(zip(chunks, scores), key=lambda pair: pair[1],
-                    reverse=True)
-    return [(chunk, score) for chunk, score in ranked[:k] if score > 0]
+    question_words = tokenize(question)
+    scores = index.get_scores(question_words)
+    matching = [
+        (chunk, score) for chunk, score in zip(chunks, scores)
+        if set(question_words) & set(tokenize(chunk.text))
+    ]
+    matching.sort(key=lambda pair: pair[1], reverse=True)
+    return matching[:k]
 
 
 def build_context(results: list[tuple[Chunk, float]]) -> str:
