@@ -89,9 +89,8 @@ return `NOT_FOUND` without calling the API.
   call path changes (e.g. to non-beta `messages.create` or `.parse()`), update
   `make_fake_client()` in `tests/test_simple_ask.py`.
 
-## Repo state to know about
+## Git
 
-`pdf_chat/` (an older `pdf_loader.py` package), `pytest.ini` and `tests/conftest.py` from commit
-`e5fd8aa` are deleted in the working tree but not committed. The current code doesn't use them.
-Don't restore them or commit their deletion without asking. Stage files explicitly
-(`git add <files>`), not `git add -A`.
+Remote `origin` is the private GitHub repo `Sajoy2129/pdf-chat`. Stage files explicitly
+(`git add <files>`), not `git add -A`. Never commit `.env` or anything in `docs/` (real customer
+PDFs), and keep real document details (names, reference numbers) out of code, tests and docs.
